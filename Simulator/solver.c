@@ -2,47 +2,15 @@
 #include "include/queue.h"
 #include "mouse.h"
 
-// This function redirects function calls from mouse.c to the desired maze
-// solving algorithm
-
+// Initializing variables
 Cell decMaze[16][16]; // y, x
 int lastPosition[2] = {-1, -1};
 int lastHeading = NORTH;
-NodeStack *finalPath = {};
+int goal[2] = {-1, -1};
+enum State { GOING, BACKING, NOTHING };
+enum State turn = GOING;
 
-Action solver(Mouse *mouse) {
-  getBestPath(mouse, decMaze);
-  return floodFill(mouse);
-}
-
-// Simple algorithm; mouse goes straight until encountering a wall, then
-// preferentially turns left
-
-Action obstacleAvoider(Mouse *mouse) {
-  if (getFrontReading(mouse) == 0)
-    return FORWARD;
-  else if (getLeftReading(mouse) == 0)
-    return LEFT;
-  else if (getRightReading(mouse) == 0)
-    return RIGHT;
-  else
-    return LEFT;
-}
-
-// Left wall following algorithm
-int turnedLeft = 0;
-Action leftWallFollower(Mouse *mouse) {
-  if (turnedLeft) {
-    turnedLeft = 0;
-    return FORWARD;
-  } else if (getLeftReading(mouse) == 0) {
-    turnedLeft = 1;
-    return LEFT;
-  } else if (getFrontReading(mouse) == 0)
-    return FORWARD;
-  else
-    return RIGHT;
-}
+Action solver(Mouse *mouse) { return floodFill(mouse); }
 
 void printMaze(Cell maze[16][16], int size) {
   for (int x = size - 1; x >= 0; x--) {
@@ -53,30 +21,18 @@ void printMaze(Cell maze[16][16], int size) {
   printf("\n");
 }
 
-int goal[2] = {-1, -1};
-
-enum State { GOING, BACKING, NOTHING };
-enum State turn = GOING;
-
+// Going from start to finish and finish to start holding the matrix.
 Action floodFill(Mouse *mouse) {
   int newCell = lastPosition[0] != mouse->x || lastPosition[1] != mouse->y;
   int newHeading = lastHeading != mouse->heading;
   int size = mouse->maze->size;
   int x = mouse->x;
   int y = mouse->y;
-  switch (turn) {
-  case GOING:
+  int currentHeandingIndex = mouse->heading;
 
-    goal[0] = mouse->maze->finish_pos[0];
-    goal[1] = mouse->maze->finish_pos[1];
-    break;
-  case BACKING:
-    goal[0] = 0;
-    goal[1] = 0;
-    break;
-  case NOTHING:
-    break;
-  }
+  goal[0] = (turn == GOING) ? mouse->maze->finish_pos[0] : 0;
+  goal[1] = (turn == GOING) ? mouse->maze->finish_pos[1] : 0;
+
   if ((newCell || newHeading)) {
     switch (mouse->heading) {
     case NORTH:
@@ -152,14 +108,16 @@ Action floodFill(Mouse *mouse) {
       break;
     }
 
-    floodFillAlg(size, decMaze, goal);
-    // printMaze(decMaze, size)
+    floodFillAlg(size, goal);
 
-    if (mouse->x == mouse->maze->finish_pos[0] &&
+    if (turn == GOING && mouse->x == mouse->maze->finish_pos[0] &&
         mouse->y == mouse->maze->finish_pos[1]) {
       turn = BACKING;
-    } else if (x == goal[0] && y == goal[1]) {
-      turn = NOTHING;
+    }
+
+    // Cuando vuelve al inicio, pasa a GOING
+    if (turn == BACKING && mouse->x == 0 && mouse->y == 0) {
+      turn = GOING;
     }
 
     // Determine best move based on current heading and flood fill values
@@ -245,37 +203,56 @@ Action floodFill(Mouse *mouse) {
     if (bestAction == IDLE && turn != NOTHING) {
       bestAction = LEFT;
     }
+    printMaze(decMaze, 16);
 
-    lastHeading = mouse->heading;
-    lastPosition[0] = mouse->x;
-    lastPosition[1] = mouse->y;
-
-    switch (bestAction) {
-    case RIGHT:
-      push(&finalPath, LEFT);
-      break;
-    case LEFT:
-      push(&finalPath, RIGHT);
-      break;
-    case FORWARD:
-      push(&finalPath, FORWARD);
-      break;
-    default:
-      break;
-    }
     return bestAction;
   }
   return IDLE;
 }
 
-void floodFillAlg(int MazeSize, Cell maze[16][16], int startPoint[2]) {
+void checkNorth(Node *c, Queue *q, int MazeSize, int currentDistance) {
+  if (c->y + 1 < MazeSize && !decMaze[c->y][c->x].N &&
+      !decMaze[c->y + 1][c->x].visited) {
+    enqueue(q, c->x, c->y + 1);
+    decMaze[c->y + 1][c->x].distance = currentDistance + 1;
+    decMaze[c->y + 1][c->x].visited = 1;
+  }
+}
+
+void checkSouth(Node *c, Queue *q, int MazeSize, int currentDistance) {
+  if (c->y - 1 >= 0 && !decMaze[c->y][c->x].S &&
+      !decMaze[c->y - 1][c->x].visited) {
+    enqueue(q, c->x, c->y - 1);
+    decMaze[c->y - 1][c->x].distance = currentDistance + 1;
+    decMaze[c->y - 1][c->x].visited = 1;
+  }
+}
+
+void checkEast(Node *c, Queue *q, int MazeSize, int currentDistance) {
+  if (c->x + 1 < MazeSize && !decMaze[c->y][c->x].E &&
+      !decMaze[c->y][c->x + 1].visited) {
+    enqueue(q, c->x + 1, c->y);
+    decMaze[c->y][c->x + 1].distance = currentDistance + 1;
+    decMaze[c->y][c->x + 1].visited = 1;
+  }
+}
+
+void checkWest(Node *c, Queue *q, int MazeSize, int currentDistance) {
+  if (c->x - 1 >= 0 && !decMaze[c->y][c->x].W &&
+      !decMaze[c->y][c->x - 1].visited) {
+    enqueue(q, c->x - 1, c->y);
+    decMaze[c->y][c->x - 1].distance = currentDistance + 1;
+    decMaze[c->y][c->x - 1].visited = 1;
+  }
+}
+
+void floodFillAlg(int MazeSize, int startPoint[2]) {
   for (int y = 0; y < MazeSize; ++y) {
     for (int x = 0; x < MazeSize; ++x) {
       decMaze[y][x].distance = -1;
       decMaze[y][x].visited = 0;
     }
   }
-
   Queue *q = initQueue();
 
   enqueue(q, startPoint[0], startPoint[1]);
@@ -286,62 +263,10 @@ void floodFillAlg(int MazeSize, Cell maze[16][16], int startPoint[2]) {
   while (!isEmpty(q)) {
     Node *c = dequeue(q);
     int currentDistance = decMaze[c->y][c->x].distance;
-
-    // Norte
-    if (c->y + 1 < MazeSize && !decMaze[c->y][c->x].N &&
-        !decMaze[c->y + 1][c->x].visited) {
-      enqueue(q, c->x, c->y + 1);
-      decMaze[c->y + 1][c->x].distance = currentDistance + 1;
-      decMaze[c->y + 1][c->x].visited = 1;
-    }
-
-    // Sur
-    if (c->y - 1 >= 0 && !decMaze[c->y][c->x].S &&
-        !decMaze[c->y - 1][c->x].visited) {
-      enqueue(q, c->x, c->y - 1);
-      decMaze[c->y - 1][c->x].distance = currentDistance + 1;
-      decMaze[c->y - 1][c->x].visited = 1;
-    }
-
-    // Este
-    if (c->x + 1 < MazeSize && !decMaze[c->y][c->x].E &&
-        !decMaze[c->y][c->x + 1].visited) {
-      enqueue(q, c->x + 1, c->y);
-      decMaze[c->y][c->x + 1].distance = currentDistance + 1;
-      decMaze[c->y][c->x + 1].visited = 1;
-    }
-
-    // Oeste
-    if (c->x - 1 >= 0 && !decMaze[c->y][c->x].W &&
-        !decMaze[c->y][c->x - 1].visited) {
-      enqueue(q, c->x - 1, c->y);
-      decMaze[c->y][c->x - 1].distance = currentDistance + 1;
-      decMaze[c->y][c->x - 1].visited = 1;
-    }
+    checkNorth(c, q, MazeSize, currentDistance);
+    checkSouth(c, q, MazeSize, currentDistance);
+    checkEast(c, q, MazeSize, currentDistance);
+    checkWest(c, q, MazeSize, currentDistance);
     free(c);
   }
-};
-
-NodeStack *getBestPath(Mouse *mouse, Cell maze[16][16]) {
-  int size = mouse->maze->size;
-  int currentValue =
-      decMaze[mouse->maze->finish_pos[1]][mouse->maze->finish_pos[0]].distance;
-  floodFillAlg(size, maze, mouse->maze->finish_pos);
-  printMaze(maze, size);
-  Cell coordinates[size * 8];
-  for (int i = 0; i < size; i++) {
-    for (int j = 0; j < size; j++) {
-      if (decMaze[i][j].E == decMaze[i][j].N == decMaze[i][j].S)
-        if (decMaze[i][j].distance == currentValue - 1)
-          currentValue = decMaze[i][j].distance;
-    }
-  };
-  return NULL;
-}
-
-Action pathSolved(NodeStack **stack) {
-  if (StackEmpty(stack))
-    return IDLE;
-  pop(stack);
-  return (*stack)->action;
 };

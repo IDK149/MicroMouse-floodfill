@@ -16,6 +16,6 @@ NodeStack *getBestPath(Mouse *mouse, Cell maze[16][16]);
 Action sendPath(NodeStack **stack);
 Action leftWallFollower(Mouse *mouse);
 Action floodFill(Mouse *mouse);
-void floodFillAlg(int MazeSize, Cell maze[16][16], int startPoint[2]);
+void floodFillAlg(int MazeSize, int startPoint[2]);
 
 #endif
